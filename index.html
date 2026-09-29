@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TEANEET — Early Access</title>
+  <style>
+    *{box-sizing:border-box}
+    body{
+      margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+      font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      background:linear-gradient(135deg,#f5f7ff,#eef2ff); color:#111827; padding:20px;
+    }
+    .card{
+      width:min(440px,100%); background:#fff; border-radius:24px; padding:28px;
+      box-shadow:0 18px 50px rgba(17,24,39,.12); text-align:center;
+    }
+    .badge{
+      display:inline-block; padding:7px 12px; border-radius:999px;
+      background:#111827; color:#fff; font-size:12px; font-weight:700; letter-spacing:.4px;
+    }
+    h1{font-size:30px; margin:16px 0 8px}
+    .sub{color:#6b7280; margin:0 0 24px; line-height:1.5}
+    .amounts{display:flex; justify-content:space-between; margin-bottom:9px; font-weight:700}
+    .bar{height:14px; background:#e5e7eb; border-radius:999px; overflow:hidden}
+    .fill{height:100%; width:0%; background:#111827; transition:width .4s ease}
+    .stats{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:20px 0}
+    .stat{background:#f8fafc; border-radius:14px; padding:14px}
+    .stat b{display:block; font-size:21px}
+    .stat span{font-size:12px; color:#6b7280}
+    .pay{
+      display:block; width:100%; border:0; border-radius:14px; padding:15px;
+      background:#111827; color:white; font-size:16px; font-weight:800; cursor:pointer;
+      text-decoration:none;
+    }
+    .pay:hover{opacity:.92}
+    .note{font-size:12px; color:#6b7280; line-height:1.5; margin-top:14px}
+    .status{font-size:12px; margin-top:12px; color:#6b7280}
+    .error{color:#b91c1c}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <span class="badge">EARLY ACCESS</span>
+    <h1>TEANEET</h1>
+    
+
+    <div class="amounts">
+      <span id="raised">₹0</span>
+      <span>Goal ₹1,000</span>
+    </div>
+    <div class="bar"><div class="fill" id="fill"></div></div>
+
+    <div class="stats">
+      <div class="stat"><b id="payments">0</b><span>Payments</span></div>
+      <div class="stat"><b id="remaining">₹1,000</b><span>Remaining</span></div>
+    </div>
+
+    <a class="pay" id="payButton" href="#">Pay ₹49 & Continue</a>
+
+    <p class="note">
+      Bar Will Auto Update In Each 1 Hour
+    </p>
+  </main>
+
+<script>
+  // ===== SETTINGS =====
+  const UPI_ID = "raunakofficial1065@oksbi";
+  const PAYMENT_AMOUNT = 49;
+  const GOAL = 1000;
+
+  // Your Google Sheet ID:
+  const SHEET_ID = "13MFuHHP__GmoiuNfuxwma1r_0SO6bJS8wLTIB3q3Ybg";
+
+  // Change this if your payment data is on another tab.
+  // Example: "Sheet1" or "Payments"
+  const SHEET_NAME = "TEANEET_FUND_RAISE";
+
+  // ====================
+
+  const upiUrl =
+    "upi://pay?pa=" + encodeURIComponent(UPI_ID) +
+    "&pn=" + encodeURIComponent("Raunak Official") +
+    "&am=" + PAYMENT_AMOUNT +
+    "&cu=INR";
+
+  document.getElementById("payButton").href = upiUrl;
+
+  function updatePage(paymentCount) {
+    const raised = paymentCount * PAYMENT_AMOUNT;
+    const remaining = Math.max(GOAL - raised, 0);
+    const percent = Math.min((raised / GOAL) * 100, 100);
+
+    document.getElementById("raised").textContent =
+      "₹" + raised.toLocaleString("en-IN");
+    document.getElementById("payments").textContent = paymentCount;
+    document.getElementById("remaining").textContent =
+      "₹" + remaining.toLocaleString("en-IN");
+    document.getElementById("fill").style.width = percent + "%";
+  }
+
+  async function loadPayments() {
+    const status = document.getElementById("status");
+
+    try {
+      // Public Google Sheets CSV endpoint.
+      // The spreadsheet must be published/viewable publicly.
+      const url =
+        "https://docs.google.com/spreadsheets/d/" + SHEET_ID +
+        "/gviz/tq?tqx=out:csv&sheet=" + encodeURIComponent(SHEET_NAME);
+
+      const response = await fetch(url, { cache: "no-store" });
+      if (!response.ok) throw new Error("Could not read Google Sheet");
+
+      const csv = await response.text();
+
+      if (!csv.trim() || csv.trim().startsWith("<!DOCTYPE")) {
+        throw new Error("Google Sheet did not return CSV data");
+      }
+
+      // Simple CSV row parser. Handles quoted cells and commas.
+      function parseCSV(text) {
+        const rows = [];
+        let row = [], cell = "", quoted = false;
+
+        for (let i = 0; i < text.length; i++) {
+          const ch = text[i];
+          const next = text[i + 1];
+
+          if (ch === '"' && quoted && next === '"') {
+            cell += '"';
+            i++;
+          } else if (ch === '"') {
+            quoted = !quoted;
+          } else if (ch === "," && !quoted) {
+            row.push(cell);
+            cell = "";
+          } else if ((ch === "\n" || ch === "\r") && !quoted) {
+            if (ch === "\r" && next === "\n") i++;
+            row.push(cell);
+            if (row.some(v => v.trim() !== "")) rows.push(row);
+            row = [];
+            cell = "";
+          } else {
+            cell += ch;
+          }
+        }
+
+        if (cell !== "" || row.length) {
+          row.push(cell);
+          if (row.some(v => v.trim() !== "")) rows.push(row);
+        }
+        return rows;
+      }
+
+      const rows = parseCSV(csv);
+
+      // Row 1 is treated as the header.
+      // Every subsequent non-empty row is counted as one ₹49 payment.
+      const paymentRows = rows.slice(1).filter(row =>
+        row.some(cell => String(cell).trim() !== "")
+      );
+
+      const paymentCount = paymentRows.length;
+
+      updatePage(paymentCount);
+
+      status.textContent =
+        "Live data loaded from TEANEET_FUND_RAISE.";
+      status.classList.remove("error");
+
+    } catch (error) {
+      console.error(error);
+      updatePage(0);
+      status.textContent =
+        "Could not read the published sheet. Check that the sheet is published to the web and the tab is named TEANEET_FUND_RAISE.";
+      status.classList.add("error");
+    }
+  }
+  loadPayments();
+  setInterval(loadPayments, 60 * 60 * 1000);
+</script>
+</body>
+</html>
